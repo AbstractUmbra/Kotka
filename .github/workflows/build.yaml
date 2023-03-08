@@ -12,7 +12,24 @@ on:
     types: [opened, reopened, synchronize]
 
 jobs:
+  clippy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - run: rustup component add clippy
+      - name: Run Clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
+          use-cross: ${{ matrix.arch.use-cross }}
+
   build_binary:
+    needs: [clippy]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -23,6 +40,7 @@ jobs:
           - { target: x86_64-pc-windows-gnu , use-cross: true, name: kotka-windows }
           - { target: aarch64-linux-android, use-cross: true, name: kotka-android }
           - { target: x86_64-unknown-linux-gnu, name: kotka-linux }
+
     steps:
       - uses: actions/checkout@v3
       - name: Extract crate information
@@ -30,14 +48,6 @@ jobs:
         run: |
           echo "PROJECT_NAME=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
           echo "PROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
-
-      - run: rustup component add clippy
-      - name: Run Clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
-          use-cross: ${{ matrix.arch.use-cross }}
 
       - name: Build
         uses: actions-rs/cargo@v1
@@ -71,6 +81,7 @@ jobs:
           path: ${{ matrix.arch.name }}.exe
 
   build_macos_binary:
+    needs: [clippy]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3

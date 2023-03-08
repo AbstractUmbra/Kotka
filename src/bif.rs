@@ -291,9 +291,9 @@ impl BIF<'_> {
 
     #[cfg(target_os = "windows")]
     fn resolve_windows_registry_key() -> Option<String> {
-        eprintln!("Trying to read the registry key path for KotOR.");
         RegKey::predef(HKEY_LOCAL_MACHINE)
             .open_subkey("SOFTWARE//Bioware//SW//Kotor")
+            .expect("The primary key does not exist.")
             .get_value("Path")
             .ok()
     }

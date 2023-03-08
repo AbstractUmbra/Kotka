@@ -12,7 +12,7 @@ on:
     types: [opened, reopened, synchronize]
 
 jobs:
-  CD:
+  build_binary:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -30,6 +30,16 @@ jobs:
         run: |
           echo "PROJECT_NAME=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
           echo "PROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
+
+      - run: rustup component add clippy
+      - name: Run Clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
+          use-cross: ${{ matrix.arch.use-cross }}
+
+
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -61,7 +71,7 @@ jobs:
         with:
           path: ${{ matrix.arch.name }}.exe
 
-  macos:
+  build_macos_binary:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
@@ -83,13 +93,13 @@ jobs:
           cp  target/release/${{ env.PROJECT_NAME }} ${{ env.PROJECT_NAME }}-macos
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v3
         with:
           path: ${{ env.PROJECT_NAME }}-macos
 
 
   release:
-    needs: [CD, macos]
+    needs: [build_binary, build_macos_binary]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
 

@@ -39,7 +39,6 @@ jobs:
           args: --all-features
           use-cross: ${{ matrix.arch.use-cross }}
 
-
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -80,6 +79,13 @@ jobs:
         run: |
             echo "PROJECT_NAME=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
             echo "PROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
+
+      - run: rustup component add clippy
+      - name: Run Clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
 
       - name: Build
         uses: actions-rs/cargo@v1

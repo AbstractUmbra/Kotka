@@ -152,8 +152,15 @@ struct InnerBIFData {
 #[derive(Debug)]
 pub struct BIF<'a> {
     path: String,
-    bifs: HashMap<String, Resource<'a>>,
+    bifs: HashMap<String, HashMap<String, HashMap<String, Resource<'a>>>>,
     array: HashMap<&'a &'a str, Vec<String>>,
+}
+
+#[derive(ByteStruct, PartialEq, Debug)]
+#[byte_struct_le]
+struct ExtractedResource {
+    offset: u32,
+    size: u32,
 }
 
 impl BIF<'_> {
@@ -186,6 +193,44 @@ impl BIF<'_> {
         Some(bif)
     }
 
+    #[cfg(target_os = "windows")]
+    fn resolve_windows_registry_key() -> Option<String> {
+        RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey("SOFTWARE//Bioware//SW//Kotor")
+            .expect("The primary key does not exist.")
+            .get_value("Path")
+            .ok()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn resolve_windows_registry_key() -> Option<String> {
+        None
+    }
+
+    pub fn parse_chitin_key_headers(file_buffer: &mut BufReader<&File>) -> Headers {
+        // move the buffer to the next header
+        file_buffer.seek(SeekFrom::Start(8)).ok();
+
+        let mut header_packed = [0u8; 16];
+        file_buffer.read_exact(&mut header_packed).unwrap();
+
+        // Read the headers of the chitin key for the necessary data.
+        Headers::read_bytes(&header_packed)
+    }
+
+    fn validate_chitin_key(file: &File) -> Option<BufReader<&File>> {
+        let mut header_packed = [0u8; 4];
+        let mut key_reader = BufReader::new(file);
+        key_reader.read_exact(&mut header_packed).unwrap();
+
+        let header = String::from_utf8_lossy(&header_packed);
+        if header != "KEY " {
+            return None;
+        }
+
+        Some(key_reader)
+    }
+
     fn parse_chitin_key_body<'a, 'c>(
         file_buffer: &'c mut BufReader<&'c File>,
         headers: &'c Headers,
@@ -194,7 +239,11 @@ impl BIF<'_> {
         registered_path: String,
     ) -> BIF<'a> {
         let mut array: HashMap<&&str, Vec<String>> = HashMap::new();
-        let mut bif_hash: HashMap<String, Resource> = HashMap::new();
+        let mut bif_hash: HashMap<String, HashMap<String, HashMap<String, Resource>>> =
+            HashMap::new();
+
+        let mut top_level_bif_hash: HashMap<String, HashMap<String, Resource>> = HashMap::new();
+        top_level_bif_hash.insert("resources".to_owned(), HashMap::new());
 
         for idx in 0..headers.key_count {
             let mut key_bytes = [0; 22];
@@ -222,11 +271,11 @@ impl BIF<'_> {
                 }
             }
 
-            array.entry(resource_type).or_default().push(format!(
-                "{}.{}",
-                resource.name(),
-                resource_type
-            ));
+            let resource_format = format!("{}.{}", resource.name(), resource_type);
+            array
+                .entry(resource_type)
+                .or_default()
+                .push(resource_format.to_owned());
 
             let bif_index_plus_offset: u32 = bif_index * 12;
             file_buffer
@@ -256,7 +305,13 @@ impl BIF<'_> {
                 resource_type,
             };
 
-            bif_hash.insert(bif_name, resource);
+            // bifhash = {bif_name: {"resources": {resource_name_and_ext: Resource}}}
+            bif_hash
+                .entry(bif_name)
+                .or_default()
+                .entry("resource".to_owned())
+                .or_default()
+                .insert(resource_format, resource);
         }
         BIF {
             path: registered_path,
@@ -265,40 +320,70 @@ impl BIF<'_> {
         }
     }
 
-    pub fn parse_chitin_key_headers(file_buffer: &mut BufReader<&File>) -> Headers {
-        // move the buffer to the next header
-        file_buffer.seek(SeekFrom::Start(8)).ok();
+    fn open_bif_file(&self, bif_name: &str) -> BufReader<File> {
+        let mut path =
+            PathBuf::from_str(&self.path).expect("The data path we're loading doesn't exist.");
+        path.push(bif_name);
 
-        let mut header_packed = [0u8; 16];
-        file_buffer.read_exact(&mut header_packed).unwrap();
+        let resource_file = File::open(path).expect("Cannot open the located file.");
 
-        // Read the headers of the chitin key for the necessary data.
-        Headers::read_bytes(&header_packed)
+        BufReader::new(resource_file)
     }
 
-    fn validate_chitin_key(file: &File) -> Option<BufReader<&File>> {
-        let mut header_packed = [0u8; 4];
-        let mut key_reader = BufReader::new(file);
-        key_reader.read_exact(&mut header_packed).unwrap();
-
-        let header = String::from_utf8_lossy(&header_packed);
-        if header != "KEY " {
-            return None;
-        }
-
-        Some(key_reader)
+    fn open_resource_file(&self, bif_name: &str, resource_name: String) -> &Resource<'_> {
+        let bif_entry = &self.bifs.get(bif_name).unwrap();
+        let resource_entry = bif_entry.get("resources").unwrap();
+        resource_entry.get(&resource_name).unwrap()
     }
 
-    #[cfg(target_os = "windows")]
-    fn resolve_windows_registry_key() -> Option<String> {
-        RegKey::predef(HKEY_LOCAL_MACHINE)
-            .open_subkey("SOFTWARE//Bioware//SW//Kotor")
-            .expect("The primary key does not exist.")
-            .get_value("Path")
-            .ok()
+    fn extract_resource(self, bif_name: &str, resource_name: String) {
+        let mut resource_buf = self.open_bif_file(bif_name);
+        let resource = self.open_resource_file(bif_name, resource_name);
+
+        resource_buf
+            .seek(SeekFrom::Start((24 + (16 * resource.idx)).into()))
+            .expect("Cannot seem to read the resource at this location.");
+
+        let mut temp_resource = [0; 8];
+        resource_buf
+            .read_exact(&mut temp_resource)
+            .expect("Couldn't read into the temporary file buffer.");
+        let temp_resource = ExtractedResource::read_bytes(&temp_resource);
+
+        resource_buf
+            .seek(SeekFrom::Start(temp_resource.offset as u64))
+            .unwrap();
+
+        let mut resource = vec![0; temp_resource.size as usize];
+        resource_buf.read_exact(&mut resource).unwrap();
+
+        println!("{:#?}", resource);
     }
-    #[cfg(not(target_os = "windows"))]
-    fn resolve_windows_registry_key() -> Option<String> {
-        None
+
+    fn get_resource(self, bif_name: &str, resource_name: String) -> Vec<u8> {
+        let mut bif_reader = self.open_bif_file(bif_name);
+        let resource = self.open_resource_file(bif_name, resource_name);
+
+        bif_reader
+            .seek(SeekFrom::Start((24 + (16 * resource.idx)).into()))
+            .expect("Cannot seem to read the resource at this location.");
+
+        let mut resource_data = [0; 8];
+        bif_reader
+            .read_exact(&mut resource_data)
+            .expect("Unable to read the resource data.");
+
+        let resource = ExtractedResource::read_bytes(&resource_data);
+
+        bif_reader
+            .seek(SeekFrom::Start(resource.offset as u64))
+            .expect("Unable to seek the resource file.");
+
+        let mut resource_data = vec![0; resource.size as usize];
+        bif_reader
+            .read_exact(&mut resource_data)
+            .expect("Unable to read the resource data.");
+
+        resource_data.to_owned()
     }
 }

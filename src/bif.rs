@@ -6,7 +6,6 @@ use std::str::FromStr;
 use byte_struct::*;
 use phf::phf_map;
 use std::fs::File;
-use tempfile::tempfile;
 
 #[cfg(target_os = "windows")]
 use winreg::enums::HKEY_LOCAL_MACHINE;
@@ -107,7 +106,7 @@ static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
 
 #[derive(ByteStruct, PartialEq, Debug)]
 #[byte_struct_le]
-pub struct Headers {
+struct Headers {
     bif_count: u32,
     key_count: u32,
     offset_filetable: u32,
@@ -208,7 +207,7 @@ impl BIF<'_> {
         None
     }
 
-    pub fn parse_chitin_key_headers(file_buffer: &mut BufReader<&File>) -> Headers {
+    fn parse_chitin_key_headers(file_buffer: &mut BufReader<&File>) -> Headers {
         // move the buffer to the next header
         file_buffer.seek(SeekFrom::Start(8)).ok();
 
@@ -337,7 +336,7 @@ impl BIF<'_> {
         resource_entry.get(&resource_name).unwrap()
     }
 
-    fn extract_resource(self, bif_name: &str, resource_name: String) -> File {
+    pub fn extract_resource(self, bif_name: &str, resource_name: String) -> File {
         let mut resource_buf = self.open_bif_file(bif_name);
         let resource = self.open_resource_file(bif_name, resource_name);
 
@@ -366,7 +365,7 @@ impl BIF<'_> {
         file
     }
 
-    fn get_resource(self, bif_name: &str, resource_name: String) -> Vec<u8> {
+    pub fn get_resource(self, bif_name: &str, resource_name: String) -> Vec<u8> {
         let mut bif_reader = self.open_bif_file(bif_name);
         let resource = self.open_resource_file(bif_name, resource_name);
 

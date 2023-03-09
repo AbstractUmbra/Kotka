@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 byte_struct = "0.8.0"
 phf = { version = "0.11.1", features = ["macros"] }
+tempfile = "3.4.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.11.0"

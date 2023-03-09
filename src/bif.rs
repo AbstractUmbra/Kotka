@@ -1,11 +1,12 @@
 use std::collections::HashMap;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use byte_struct::*;
 use phf::phf_map;
 use std::fs::File;
+use tempfile::tempfile;
 
 #[cfg(target_os = "windows")]
 use winreg::enums::HKEY_LOCAL_MACHINE;
@@ -336,7 +337,7 @@ impl BIF<'_> {
         resource_entry.get(&resource_name).unwrap()
     }
 
-    fn extract_resource(self, bif_name: &str, resource_name: String) {
+    fn extract_resource(self, bif_name: &str, resource_name: String) -> Result<(), std::io::Error> {
         let mut resource_buf = self.open_bif_file(bif_name);
         let resource = self.open_resource_file(bif_name, resource_name);
 
@@ -357,7 +358,9 @@ impl BIF<'_> {
         let mut resource = vec![0; temp_resource.size as usize];
         resource_buf.read_exact(&mut resource).unwrap();
 
-        println!("{:#?}", resource);
+        let mut file = tempfile::tempfile().expect("Unable to create a temporary file.");
+
+        file.write_all(&resource as &[u8])
     }
 
     fn get_resource(self, bif_name: &str, resource_name: String) -> Vec<u8> {

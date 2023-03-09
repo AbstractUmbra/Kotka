@@ -337,7 +337,7 @@ impl BIF<'_> {
         resource_entry.get(&resource_name).unwrap()
     }
 
-    fn extract_resource(self, bif_name: &str, resource_name: String) -> Result<(), std::io::Error> {
+    fn extract_resource(self, bif_name: &str, resource_name: String) -> File {
         let mut resource_buf = self.open_bif_file(bif_name);
         let resource = self.open_resource_file(bif_name, resource_name);
 
@@ -361,6 +361,9 @@ impl BIF<'_> {
         let mut file = tempfile::tempfile().expect("Unable to create a temporary file.");
 
         file.write_all(&resource as &[u8])
+            .expect("Unable to write the temporary resource to the temp file.");
+
+        file
     }
 
     fn get_resource(self, bif_name: &str, resource_name: String) -> Vec<u8> {

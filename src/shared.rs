@@ -1,4 +1,10 @@
 use phf::phf_map;
+use std::path::PathBuf;
+
+#[cfg(target_os = "windows")]
+use winreg::enums::HKEY_LOCAL_MACHINE;
+#[cfg(target_os = "windows")]
+use winreg::RegKey;
 
 pub static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
     0x0000u16 => "res", 	// Misc. GFF resources
@@ -91,3 +97,21 @@ pub static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
     0x270Eu16 => "bif",
     0x270Fu16 => "key"
 };
+
+#[cfg(target_os = "windows")]
+pub fn resolve_windows_registry_key() -> Option<PathBuf> {
+    use std::str::FromStr;
+
+    let path: String = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey("SOFTWARE//Bioware//SW//Kotor")
+        .expect("The primary key does not exist.")
+        .get_value("Path")
+        .ok();
+
+    Some(PathBuf::from_str(&path).expect("Failed to load the registry key data."))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn resolve_windows_registry_key() -> Option<PathBuf> {
+    None
+}

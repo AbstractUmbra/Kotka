@@ -1,13 +1,13 @@
+use binrw::{binrw, io::Cursor, BinRead};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use super::shared::RES_TYPES;
-use byte_struct::*;
 
-#[derive(ByteStruct, PartialEq, Debug)]
-#[byte_struct_le]
+#[binrw]
+#[br(little)]
 pub struct InnerErfData {
     localized_string_count: u32,
     localized_string_size: u32,
@@ -20,16 +20,21 @@ pub struct InnerErfData {
     description_str_ref: u32,
 }
 
-#[derive(ByteStruct, PartialEq, Debug)]
-#[byte_struct_le]
+#[binrw]
+#[brw(little)]
 struct BinaryLocalizedString {
     language_id: u32,
-    string: u32,
+    #[br(count=language_id)]
+    string: Vec<u8>,
 }
 
-struct LocalizedString {
-    language_id: u32,
-    string: String,
+impl BinaryLocalizedString {
+    pub fn resolve_string(&self) -> String {
+        let mut string: String =
+            String::from_utf8_lossy(&self.string[0..(self.string.len() - 1)]).into_owned();
+
+        string.split_off(8 + string.len())
+    }
 }
 
 pub struct Erf {
@@ -62,43 +67,31 @@ impl Erf {
         todo!()
     }
 
-    fn build_localized_string_list<'a>(
+    fn build_localized_string_list(
         &self,
         buffer: &mut BufReader<File>,
         offset: u32,
         buffer_size: u32,
         loop_count: u32,
-    ) -> Vec<LocalizedString> {
+    ) -> Vec<BinaryLocalizedString> {
         buffer.seek(SeekFrom::Start(offset as u64)).unwrap();
 
-        let mut temp_buffer = vec![0; buffer_size as usize];
-        buffer.read_exact(&mut temp_buffer).unwrap();
+        let mut internal_buffer = vec![0; buffer_size as usize];
+        buffer.read_exact(&mut internal_buffer).unwrap();
+        let mut temp_buffer = Cursor::new(internal_buffer);
 
-        let mut localised_strings: Vec<LocalizedString> = Vec::new();
+        let mut localised_strings: Vec<BinaryLocalizedString> = Vec::new();
         for _ in 0..loop_count {
             // Get the two u32 elements for langugage id and string
-            let localised_ = BinaryLocalizedString::read_bytes(&temp_buffer);
+            let localised_ = BinaryLocalizedString::read(&mut temp_buffer).unwrap();
 
-            // then we get the string value which is based on the size of the string
-            let mut string_buffer = vec![0u8; localised_.string as usize];
-            buffer.read_exact(&mut string_buffer).unwrap();
-            let string_ = String::from_utf8_lossy(&string_buffer);
-
-            let len = 8 + string_.len();
-            let (left, _) = string_.split_at(len);
-
-            let localised_string = LocalizedString {
-                language_id: localised_.language_id,
-                string: left.to_owned(),
-            };
-
-            localised_strings.push(localised_string);
+            localised_strings.push(localised_);
         }
         localised_strings
     }
 
     pub fn read_erf(&self, erf_filename: &str) {
-        let mut buffer = &mut self.open_file(erf_filename);
+        let buffer = &mut self.open_file(erf_filename);
 
         let mut sig_buffer = [0u8; 4];
         buffer.read_exact(&mut sig_buffer).unwrap();
@@ -108,10 +101,12 @@ impl Erf {
         let mut inner_erf_buffer = [0u8; 36];
         buffer.read_exact(&mut inner_erf_buffer).unwrap();
 
-        let inner_erf_data = InnerErfData::read_bytes(&inner_erf_buffer);
+        let mut inner_erf_buffer = Cursor::new(inner_erf_buffer);
+
+        let inner_erf_data = InnerErfData::read(&mut inner_erf_buffer).unwrap();
 
         let localized_strings = &self.build_localized_string_list(
-            &mut buffer,
+            buffer,
             inner_erf_data.offset_to_localized_string,
             inner_erf_data.localized_string_size,
             inner_erf_data.localized_string_count,

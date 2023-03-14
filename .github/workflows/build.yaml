@@ -69,7 +69,7 @@ jobs:
         shell: bash
         if: ${{ matrix.arch.target == 'x86_64-pc-windows-gnu' }}
         run: |
-            cp  target/${{ matrix.arch.target }}/release/${{ env.PROJECT_NAME }}.exe ${{ matrix.arch.name }}.exe
+            cp target/${{ matrix.arch.target }}/release/${{ env.PROJECT_NAME }}.exe ${{ matrix.arch.name }}.exe
 
       - name: Upload non-Windows package artifact
         uses: actions/upload-artifact@v3

@@ -1,13 +1,18 @@
 [package]
 name = "kotka"
 version = "0.1.0"
+description = "A KotOR 1 and 2 Save Editor!"
+authors = ["Alex Nørgaard <umbra@abstractumbra.dev>"]
+license = "GPLv3"
+repository = "https://github.com/AbstractUmbra/Kotka"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-byte_struct = "0.8.0"
+binrw = "0.11.1"
+eframe = "0.21.3"
 phf = { version = "0.11.1", features = ["macros"] }
+rfd = { version = "0.11.2", features = ["common-controls-v6"] }
 tempfile = "3.4.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]

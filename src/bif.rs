@@ -1,20 +1,15 @@
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::str::FromStr;
 
-use byte_struct::*;
+use binrw::{binrw, io::Cursor, BinRead};
 use std::fs::File;
 
 use super::shared::RES_TYPES;
 
-#[cfg(target_os = "windows")]
-use winreg::enums::HKEY_LOCAL_MACHINE;
-#[cfg(target_os = "windows")]
-use winreg::RegKey;
-
-#[derive(ByteStruct, PartialEq, Debug)]
-#[byte_struct_le]
+#[derive(PartialEq, Debug)]
+#[binrw]
+#[br(little)]
 struct BinaryHeaders {
     bif_count: u32,
     key_count: u32,
@@ -22,14 +17,16 @@ struct BinaryHeaders {
     offset_keytable: u32,
 }
 
-#[derive(ByteStruct, PartialEq, Debug)]
-#[byte_struct_le]
+#[derive(PartialEq, Debug)]
+#[binrw]
+#[br(little)]
 struct BinaryResourceReference {
     resolved: [u8; 16],
 }
 
-#[derive(ByteStruct, PartialEq, Debug)]
-#[byte_struct_le]
+#[derive(PartialEq, Debug)]
+#[binrw]
+#[br(little)]
 struct BinaryResourceData {
     reference: BinaryResourceReference,
     type_id: u16,
@@ -44,16 +41,18 @@ impl BinaryResourceData {
     }
 }
 
-#[derive(ByteStruct, PartialEq, Debug)]
-#[byte_struct_le]
+#[derive(PartialEq, Debug)]
+#[binrw]
+#[br(little)]
 struct BinaryBIFData {
     size: u32,
     name_offset: u32,
     name_size: u16,
 }
 
-#[derive(ByteStruct, PartialEq, Debug)]
-#[byte_struct_le]
+#[derive(PartialEq, Debug)]
+#[binrw]
+#[br(little)]
 struct BinaryExtractedResource {
     offset: u32,
     size: u32,
@@ -68,25 +67,23 @@ pub struct BIFResource<'a> {
 
 #[derive(Debug)]
 pub struct BIF<'a> {
-    path: String,
+    path: PathBuf,
     bifs: HashMap<String, HashMap<String, HashMap<String, BIFResource<'a>>>>,
     array: HashMap<&'a &'a str, Vec<String>>,
 }
 
 impl BIF<'_> {
     pub fn new(
-        installation_path: Option<String>,
+        installation_path: &mut PathBuf,
         bif_ix_filter: Option<u32>,
         bif_type_filter: &mut Option<String>,
     ) -> Option<Self> {
         // If we don't pass a path, e.g. linux or custom windows install
         // then we wanna return here, since it likely isn't resolved by the reg key.
-        let registered_path = installation_path.or(BIF::resolve_windows_registry_key())?;
-        let mut path = PathBuf::from_str(&registered_path).expect("Installation path not found.");
+        installation_path.push("chitin.key");
 
-        path.push("chitin.key");
-
-        let file = File::open(path).expect("Chitin Key not found or could not be opened.");
+        let file =
+            File::open(&installation_path).expect("Chitin Key not found or could not be opened.");
 
         let mut buffer = BIF::validate_chitin_key(&file)?;
 
@@ -97,24 +94,10 @@ impl BIF<'_> {
             &chitin_headers,
             bif_ix_filter,
             bif_type_filter,
-            registered_path,
+            installation_path,
         );
 
         Some(bif)
-    }
-
-    #[cfg(target_os = "windows")]
-    fn resolve_windows_registry_key() -> Option<String> {
-        RegKey::predef(HKEY_LOCAL_MACHINE)
-            .open_subkey("SOFTWARE//Bioware//SW//Kotor")
-            .expect("The primary key does not exist.")
-            .get_value("Path")
-            .ok()
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn resolve_windows_registry_key() -> Option<String> {
-        None
     }
 
     fn parse_chitin_key_headers(file_buffer: &mut BufReader<&File>) -> BinaryHeaders {
@@ -123,9 +106,10 @@ impl BIF<'_> {
 
         let mut header_packed = [0u8; 16];
         file_buffer.read_exact(&mut header_packed).unwrap();
+        let mut header_packed = Cursor::new(header_packed);
 
         // Read the headers of the chitin key for the necessary data.
-        BinaryHeaders::read_bytes(&header_packed)
+        BinaryHeaders::read(&mut header_packed).unwrap()
     }
 
     fn validate_chitin_key(file: &File) -> Option<BufReader<&File>> {
@@ -146,7 +130,7 @@ impl BIF<'_> {
         headers: &'c BinaryHeaders,
         bif_ix_filter: Option<u32>,
         bif_type_filter: &'c mut Option<String>,
-        registered_path: String,
+        registered_path: &mut PathBuf,
     ) -> BIF<'a> {
         let mut array: HashMap<&&str, Vec<String>> = HashMap::new();
         let mut bif_hash: HashMap<String, HashMap<String, HashMap<String, BIFResource>>> =
@@ -163,8 +147,9 @@ impl BIF<'_> {
                 ))
                 .unwrap();
             file_buffer.read_exact(&mut key_bytes).unwrap();
+            let mut key_bytes = Cursor::new(key_bytes);
 
-            let resource = BinaryResourceData::read_bytes(&key_bytes);
+            let resource = BinaryResourceData::read(&mut key_bytes).unwrap();
 
             let bif_index: u32 = resource.id >> 20;
 
@@ -198,7 +183,8 @@ impl BIF<'_> {
 
             let mut bif_data = [0; 10];
             file_buffer.read_exact(&mut bif_data).unwrap();
-            let inner_bif = BinaryBIFData::read_bytes(&bif_data);
+            let mut bif_data = Cursor::new(bif_data);
+            let inner_bif = BinaryBIFData::read(&mut bif_data).unwrap();
 
             file_buffer
                 .seek(SeekFrom::Start(inner_bif.name_offset as u64))
@@ -224,15 +210,14 @@ impl BIF<'_> {
                 .insert(resource_format, resource);
         }
         BIF {
-            path: registered_path,
+            path: registered_path.to_owned(),
             bifs: bif_hash,
             array,
         }
     }
 
-    fn open_bif_file(&self, bif_name: &str) -> BufReader<File> {
-        let mut path =
-            PathBuf::from_str(&self.path).expect("The data path we're loading doesn't exist.");
+    fn open_bif_file(&mut self, bif_name: &str) -> BufReader<File> {
+        let path = &mut self.path;
         path.push(bif_name);
 
         let resource_file = File::open(path).expect("Cannot open the located file.");
@@ -246,7 +231,7 @@ impl BIF<'_> {
         resource_entry.get(&resource_name).unwrap()
     }
 
-    pub fn extract_resource(self, bif_name: &str, resource_name: String) -> File {
+    pub fn extract_resource(&mut self, bif_name: &str, resource_name: String) -> File {
         let mut resource_buf = self.open_bif_file(bif_name);
         let resource = self.open_resource_file(bif_name, resource_name);
 
@@ -258,7 +243,8 @@ impl BIF<'_> {
         resource_buf
             .read_exact(&mut temp_resource)
             .expect("Couldn't read into the temporary file buffer.");
-        let temp_resource = BinaryExtractedResource::read_bytes(&temp_resource);
+        let mut temp_resource = Cursor::new(temp_resource);
+        let temp_resource = BinaryExtractedResource::read(&mut temp_resource).unwrap();
 
         resource_buf
             .seek(SeekFrom::Start(temp_resource.offset as u64))
@@ -275,7 +261,7 @@ impl BIF<'_> {
         file
     }
 
-    pub fn get_resource(self, bif_name: &str, resource_name: String) -> Vec<u8> {
+    pub fn get_resource(&mut self, bif_name: &str, resource_name: String) -> Vec<u8> {
         let mut bif_reader = self.open_bif_file(bif_name);
         let resource = self.open_resource_file(bif_name, resource_name);
 
@@ -287,8 +273,9 @@ impl BIF<'_> {
         bif_reader
             .read_exact(&mut resource_data)
             .expect("Unable to read the resource data.");
+        let mut resource_data = Cursor::new(resource_data);
 
-        let resource = BinaryExtractedResource::read_bytes(&resource_data);
+        let resource = BinaryExtractedResource::read(&mut resource_data).unwrap();
 
         bif_reader
             .seek(SeekFrom::Start(resource.offset as u64))

@@ -1,3 +1,4 @@
+use binrw::BinRead;
 use phf::phf_map;
 use std::path::PathBuf;
 
@@ -98,17 +99,33 @@ pub static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
     0x270Fu16 => "key"
 };
 
+#[binrw::parser(reader)]
+pub fn parse_padded_string<const SIZE: usize, T: for<'a> From<&'a str>>() -> binrw::BinResult<T> {
+    let pos = reader.stream_position()?;
+    <[u8; SIZE]>::read(reader).and_then(|bytes| {
+        std::str::from_utf8(&bytes)
+            .map(|s| s.trim_end_matches('\0').into())
+            .map_err(|err| binrw::Error::Custom {
+                pos,
+                err: Box::new(err),
+            })
+    })
+}
+
 #[cfg(target_os = "windows")]
 pub fn resolve_windows_registry_key() -> Option<PathBuf> {
     use std::str::FromStr;
 
-    let path: String = RegKey::predef(HKEY_LOCAL_MACHINE)
+    let path: Option<String> = RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey("SOFTWARE//Bioware//SW//Kotor")
-        .expect("The primary key does not exist.")
+        .ok()?
         .get_value("Path")
         .ok();
 
-    Some(PathBuf::from_str(&path).expect("Failed to load the registry key data."))
+    match path {
+        Some(path) => PathBuf::from_str(path.as_ref()).ok(),
+        None => None,
+    }
 }
 
 #[cfg(not(target_os = "windows"))]

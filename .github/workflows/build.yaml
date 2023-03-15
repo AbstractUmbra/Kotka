@@ -23,7 +23,7 @@ jobs:
       - name: install libgtk
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev
+          sudo apt-get install -y libgtk-3-dev libglib2.0-dev libatk1.0-dev libsoup2.4-dev libwebkit2gtk-4.0-dev
       - name: Run Clippy
         uses: actions-rs/clippy-check@v1
         with:
@@ -31,7 +31,6 @@ jobs:
           args: --all-features
 
   build_binary:
-    needs: [clippy]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -40,8 +39,8 @@ jobs:
           - { target: aarch64-unknown-linux-gnu , use-cross: true, name: kotka-linux-aarch64, install-gtk: true}
           - { target: i686-unknown-linux-gnu , use-cross: true, name: kotka-linux-i686, install-gtk: true }
           - { target: x86_64-pc-windows-gnu , use-cross: true, name: kotka-windows }
-          - { target: aarch64-linux-android, use-cross: true, name: kotka-android }
-          - { target: x86_64-unknown-linux-gnu, name: kotka-linux }
+          - { target: aarch64-linux-android, use-cross: true, name: kotka-android, install-gtk: true}
+          - { target: x86_64-unknown-linux-gnu, name: kotka-linux, install-gtk: true }
 
     steps:
       - uses: actions/checkout@v3
@@ -54,19 +53,19 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install libgtk3 if needed
+        shell: bash
+        if: ${{ matrix.arch.install-gtk}}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libglib2.0-dev libatk1.0-dev libsoup2.4-dev libwebkit2gtk-4.0-dev
+
       - name: Build
         uses: actions-rs/cargo@v1
         with:
           use-cross: ${{ matrix.arch.use-cross }}
           command: build
           args: --release --target=${{ matrix.arch.target }}
-
-      - name: Install libgtk3 if needed
-        shell: bash
-        if: ${{ matrix.arch.install-gtk}}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev
 
       - name: Copy non-Windows binary
         shell: bash
@@ -93,7 +92,6 @@ jobs:
           path: ${{ matrix.arch.name }}.exe
 
   build_macos_binary:
-    needs: [clippy]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
@@ -102,13 +100,6 @@ jobs:
         run: |
             echo "PROJECT_NAME=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
             echo "PROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
-
-      - run: rustup component add clippy
-      - name: Run Clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
 
       - name: Build
         uses: actions-rs/cargo@v1
@@ -128,7 +119,7 @@ jobs:
 
 
   release:
-    needs: [build_binary, build_macos_binary]
+    needs: [build_binary, build_macos_binary, clippy]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
 

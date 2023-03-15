@@ -17,28 +17,35 @@ struct BinaryHeaders {
     offset_keytable: u32,
 }
 
-#[derive(PartialEq, Debug)]
-#[binrw]
-#[br(little)]
-struct BinaryResourceReference {
-    resolved: [u8; 16],
+#[derive(NamedArgs, Clone)]
+struct PaddedStringArgs {
+    count: usize,
 }
 
-#[derive(PartialEq, Debug)]
-#[binrw]
+#[binrw::parser(reader)]
+fn padded_string_parser(args: PaddedStringArgs, ...) -> binrw::BinResult<String> {
+    let mut bytes = vec![];
+    bytes.reserve_exact(args.count);
+
+    let bytes_read = reader.take(args.count as u64).read_to_end(&mut bytes)?;
+
+    // if bytes_read != args.count {
+    //     return Err(());
+    // }
+
+    // TODO: handle gracefully
+    let slice = std::str::from_utf8(&bytes).unwrap();
+
+    Ok(slice.trim_end_matches('\0').to_owned())
+}
+
+#[derive(BinRead, PartialEq, Debug)]
 #[br(little)]
 struct BinaryResourceData {
-    reference: BinaryResourceReference,
+    #[br(count=16, parse_with = padded_string_parser)]
+    reference: String,
     type_id: u16,
     id: u32,
-}
-impl BinaryResourceData {
-    pub fn name(&self) -> String {
-        std::str::from_utf8(&self.reference.resolved)
-            .expect("Enable to read the data from the reference.")
-            .trim_matches('\x00')
-            .to_owned()
-    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -166,7 +173,7 @@ impl BIF<'_> {
                 }
             }
 
-            let resource_format = format!("{}.{}", resource.name(), resource_type);
+            let resource_format = format!("{}.{}", resource.reference, resource_type);
             array
                 .entry(resource_type)
                 .or_default()

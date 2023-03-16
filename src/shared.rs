@@ -116,16 +116,13 @@ pub fn parse_padded_string<const SIZE: usize, T: for<'a> From<&'a str>>() -> bin
 pub fn resolve_windows_registry_key() -> Option<PathBuf> {
     use std::str::FromStr;
 
-    let path: Option<String> = RegKey::predef(HKEY_LOCAL_MACHINE)
+    let path: String = RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey("SOFTWARE//Bioware//SW//Kotor")
         .ok()?
         .get_value("Path")
-        .ok();
+        .ok()?;
 
-    match path {
-        Some(path) => PathBuf::from_str(path.as_ref()).ok(),
-        None => None,
-    }
+    PathBuf::from_str(path.as_ref()).ok()
 }
 
 #[cfg(not(target_os = "windows"))]

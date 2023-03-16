@@ -1,6 +1,6 @@
-use binrw::{binrw, io::Cursor, BinRead};
+use binrw::{binrw, BinRead};
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, SeekFrom};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -24,13 +24,13 @@ pub struct InnerErfData {
 #[binrw]
 #[brw(little)]
 #[derive(Debug, Eq, PartialEq)]
-struct BinaryLocalizedString {
+struct LocalizedString {
     language_id: u32,
     #[br(count=language_id)]
     string: Vec<u8>,
 }
 
-impl BinaryLocalizedString {
+impl LocalizedString {
     pub fn resolve_string(&self) -> String {
         let mut string: String =
             String::from_utf8_lossy(&self.string[0..(self.string.len() - 1)]).into_owned();
@@ -47,7 +47,7 @@ pub struct Erf {
     version: Vec<u8>,
     metadata: InnerErfData,
     #[br(seek_before = SeekFrom::Start(metadata.offset_to_localized_string as u64), count=metadata.localized_string_count)]
-    localised_strings: Vec<BinaryLocalizedString>,
+    localised_strings: Vec<LocalizedString>,
 }
 
 impl Erf {

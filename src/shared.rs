@@ -7,7 +7,7 @@ use winreg::enums::HKEY_LOCAL_MACHINE;
 #[cfg(target_os = "windows")]
 use winreg::RegKey;
 
-pub static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
+pub(crate) static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
     0x0000u16 => "res", 	// Misc. GFF resources
     0x0001u16 => "bmp", 	// Microsoft Windows Bitmap
     0x0002u16 => "mve",
@@ -100,7 +100,8 @@ pub static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
 };
 
 #[binrw::parser(reader)]
-pub fn parse_padded_string<const SIZE: usize, T: for<'a> From<&'a str>>() -> binrw::BinResult<T> {
+pub(crate) fn parse_padded_string<const SIZE: usize, T: for<'a> From<&'a str>>(
+) -> binrw::BinResult<T> {
     let pos = reader.stream_position()?;
     <[u8; SIZE]>::read(reader).and_then(|bytes| {
         std::str::from_utf8(&bytes)
@@ -113,7 +114,7 @@ pub fn parse_padded_string<const SIZE: usize, T: for<'a> From<&'a str>>() -> bin
 }
 
 #[cfg(target_os = "windows")]
-pub fn resolve_windows_registry_key() -> Option<PathBuf> {
+pub(crate) fn resolve_windows_registry_key() -> Option<PathBuf> {
     use std::str::FromStr;
 
     let path: Option<String> = RegKey::predef(HKEY_LOCAL_MACHINE)
@@ -129,6 +130,6 @@ pub fn resolve_windows_registry_key() -> Option<PathBuf> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn resolve_windows_registry_key() -> Option<PathBuf> {
+pub(crate) fn resolve_windows_registry_key() -> Option<PathBuf> {
     None
 }

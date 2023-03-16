@@ -3,21 +3,13 @@ use std::io::{BufReader, Read, Write};
 use std::path::PathBuf;
 
 use binrw::{
+    binrw,
     io::{Cursor, Seek, SeekFrom},
     BinRead, NullString,
 };
 use std::fs::{File, OpenOptions};
 
 use super::shared::{parse_padded_string, RES_TYPES};
-
-#[derive(BinRead, PartialEq, Debug)]
-#[br(little)]
-struct BinaryHeaders {
-    bif_count: u32,
-    key_count: u32,
-    offset_filetable: u32,
-    offset_keytable: u32,
-}
 
 #[derive(BinRead, PartialEq, Debug)]
 #[br(little)]
@@ -30,33 +22,36 @@ struct BinaryResourceData {
 
 #[derive(BinRead, PartialEq, Debug)]
 #[br(little)]
-struct BinaryBIFData {
+struct BIFData {
     size: u32,
     name_offset: u32,
     name_size: u16,
+    #[br(seek_before = SeekFrom::Start(name_offset as u64 + name_size as u64))]
+    name: NullString,
 }
 
-#[derive(BinRead, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
+#[binrw]
 #[br(little)]
-struct BinaryExtractedResource {
+struct ExtractedResource {
     offset: u32,
     size: u32,
 }
 
-#[derive(BinRead)]
-#[br(little)]
+#[binrw]
+#[brw(little, magic = b"KEY ")]
 struct ChitinHeader {
     #[br(count = 4)]
     value: Vec<u8>,
-}
-#[derive(BinRead)]
-#[br(little)]
-struct BIFName {
-    value: NullString,
+    #[br(seek_before = SeekFrom::Start(8u64))]
+    bif_count: u32,
+    key_count: u32,
+    offset_filetable: u32,
+    offset_keytable: u32,
 }
 
 #[derive(Debug)]
-pub struct BIFResource<'a> {
+struct BIFResource<'a> {
     idx: u32,
     _type_id: u16,
     _resource_type: &'a &'a str,
@@ -65,7 +60,7 @@ pub struct BIFResource<'a> {
 #[derive(Debug)]
 pub struct BIF<'a> {
     path: PathBuf,
-    bifs: HashMap<String, HashMap<String, HashMap<String, BIFResource<'a>>>>,
+    bifs: HashMap<String, HashMap<String, BIFResource<'a>>>,
     _array: HashMap<&'a &'a str, Vec<String>>,
 }
 
@@ -73,17 +68,15 @@ impl BIF<'_> {
     pub fn new(
         installation_path: &mut PathBuf,
         bif_ix_filter: Option<u32>,
-        bif_type_filter: &mut Option<String>,
+        bif_type_filter: Option<&str>,
     ) -> Option<Self> {
-        // If we don't pass a path, e.g. linux or custom windows install
-        // then we wanna return here, since it likely isn't resolved by the reg key.
         installation_path.push("chitin.key");
 
         let mut file = Self::open_file(installation_path)
             .expect("Chitin Key not found or could not be opened.");
 
         let chitin_headers =
-            BIF::validate_and_parse_chitin(&mut file).expect("Unable to parse the chitin key.");
+            Self::validate_and_parse_chitin(&mut file).expect("Unable to parse the chitin key.");
 
         let chitin_body = Self::parse_chitin_key_body(
             &mut file,
@@ -100,32 +93,19 @@ impl BIF<'_> {
         OpenOptions::new().read(true).open(path)
     }
 
-    fn validate_and_parse_chitin(file: &mut File) -> Result<BinaryHeaders, binrw::Error> {
-        let headers = ChitinHeader::read(file).unwrap();
-
-        let header_string = String::from_utf8(headers.value).unwrap();
-
-        if header_string != "KEY " {
-            panic!("Chitin key seems to be invalid.")
-        } else {
-            file.seek(SeekFrom::Start(8)).ok();
-            BinaryHeaders::read(file)
-        }
+    fn validate_and_parse_chitin(file: &mut File) -> Result<ChitinHeader, binrw::Error> {
+        ChitinHeader::read(file)
     }
 
-    fn parse_chitin_key_body<'a, 'c>(
-        file: &'c mut File,
-        headers: BinaryHeaders,
+    fn parse_chitin_key_body<'a>(
+        file: &mut File,
+        headers: ChitinHeader,
         bif_ix_filter: Option<u32>,
-        bif_type_filter: &'c mut Option<String>,
+        bif_type_filter: Option<&str>,
         registered_path: &mut PathBuf,
     ) -> BIF<'a> {
         let mut array: HashMap<&&str, Vec<String>> = HashMap::new();
-        let mut bif_hash: HashMap<String, HashMap<String, HashMap<String, BIFResource>>> =
-            HashMap::new();
-
-        let mut top_level_bif_hash: HashMap<String, HashMap<String, BIFResource>> = HashMap::new();
-        top_level_bif_hash.insert("resources".to_owned(), HashMap::new());
+        let mut bifs: HashMap<String, HashMap<String, BIFResource>> = HashMap::new();
 
         for idx in 0..headers.key_count {
             file.seek(SeekFrom::Start(
@@ -145,7 +125,7 @@ impl BIF<'_> {
                 }
             }
             if let Some(bif_type_filter) = bif_type_filter {
-                if *resource_type != bif_type_filter.as_mut() {
+                if *resource_type != bif_type_filter {
                     continue;
                 }
             }
@@ -164,11 +144,7 @@ impl BIF<'_> {
 
             let index_in_bif = resource.id - (bif_index << 20);
 
-            let inner_bif = BinaryBIFData::read(file).unwrap();
-
-            let seek_len = inner_bif.name_offset as u64 + inner_bif.name_size as u64;
-            file.seek(SeekFrom::Start(seek_len)).unwrap();
-            let bif_name = BIFName::read(file).unwrap();
+            let inner_bif = BIFData::read(file).unwrap();
 
             let resource = BIFResource {
                 idx: index_in_bif,
@@ -176,38 +152,32 @@ impl BIF<'_> {
                 _resource_type: resource_type,
             };
 
-            // bifhash = {bif_name: {"resources": {resource_name_and_ext: Resource}}}
-            bif_hash
-                .entry(bif_name.value.to_string())
-                .or_default()
-                .entry("resource".to_owned())
+            // bifhash = {bif_name: {resource_name_and_ext: Resource}}
+            bifs.entry(inner_bif.name.to_string())
                 .or_default()
                 .insert(resource_format, resource);
         }
         BIF {
             path: registered_path.to_owned(),
-            bifs: bif_hash,
+            bifs,
             _array: array,
         }
     }
 
-    fn open_bif_file(&mut self, bif_name: &str) -> BufReader<File> {
+    fn open_bif_file(&mut self, bif_name: &str) -> Result<File, std::io::Error> {
         let path = &mut self.path;
         path.push(bif_name);
 
-        let resource_file = File::open(path).expect("Cannot open the located file.");
-
-        BufReader::new(resource_file)
+        Self::open_file(path)
     }
 
     fn open_resource_file(&self, bif_name: &str, resource_name: String) -> &BIFResource<'_> {
         let bif_entry = &self.bifs.get(bif_name).unwrap();
-        let resource_entry = bif_entry.get("resources").unwrap();
-        resource_entry.get(&resource_name).unwrap()
+        bif_entry.get(&resource_name).unwrap()
     }
 
     pub fn extract_resource(&mut self, bif_name: &str, resource_name: String) -> File {
-        let mut resource_buf = self.open_bif_file(bif_name);
+        let mut resource_buf = self.open_bif_file(bif_name).unwrap();
         let resource = self.open_resource_file(bif_name, resource_name);
 
         resource_buf
@@ -219,7 +189,7 @@ impl BIF<'_> {
             .read_exact(&mut temp_resource)
             .expect("Couldn't read into the temporary file buffer.");
         let mut temp_resource = Cursor::new(temp_resource);
-        let temp_resource = BinaryExtractedResource::read(&mut temp_resource).unwrap();
+        let temp_resource = ExtractedResource::read(&mut temp_resource).unwrap();
 
         resource_buf
             .seek(SeekFrom::Start(temp_resource.offset as u64))
@@ -237,7 +207,7 @@ impl BIF<'_> {
     }
 
     pub fn get_resource(&mut self, bif_name: &str, resource_name: String) -> Vec<u8> {
-        let mut bif_reader = self.open_bif_file(bif_name);
+        let mut bif_reader = self.open_bif_file(bif_name).unwrap();
         let resource = self.open_resource_file(bif_name, resource_name);
 
         bif_reader
@@ -250,7 +220,7 @@ impl BIF<'_> {
             .expect("Unable to read the resource data.");
         let mut resource_data = Cursor::new(resource_data);
 
-        let resource = BinaryExtractedResource::read(&mut resource_data).unwrap();
+        let resource = ExtractedResource::read(&mut resource_data).unwrap();
 
         bif_reader
             .seek(SeekFrom::Start(resource.offset as u64))

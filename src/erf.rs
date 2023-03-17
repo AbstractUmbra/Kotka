@@ -1,4 +1,4 @@
-use binrw::{binrw, BinRead};
+use binrw::{binread, binrw, BinRead};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, SeekFrom};
 use std::path::PathBuf;
@@ -40,6 +40,17 @@ impl LocalizedString {
 }
 
 #[binrw]
+#[brw(little, import(version: Vec<u8>))]
+#[derive(Debug, Eq, PartialEq)]
+struct ErfKey {
+    #[br(temp, calc = *version.last().unwrap())]
+    #[bw(ignore)]
+    version_char: u8,
+    #[br(seek_before = SeekFrom::Start(if version_char == 0x48 { 24u64 } else { 40u64 }), count=if version_char == 0x48 { 16 } else { 32 })]
+    resref: Vec<u8>,
+}
+
+#[binrw]
 #[brw(little, magic = b"ERF ")]
 #[derive(Debug, Eq, PartialEq)]
 pub struct Erf {
@@ -48,25 +59,24 @@ pub struct Erf {
     metadata: InnerErfData,
     #[br(seek_before = SeekFrom::Start(metadata.offset_to_localized_string as u64), count=metadata.localized_string_count)]
     localised_strings: Vec<LocalizedString>,
+    #[br(seek_before = SeekFrom::Start(metadata.offset_to_key_list as u64), count=metadata.entry_count, args { inner: (version,) })]
+    keys: Vec<ErfKey>,
 }
 
 impl Erf {
-    pub fn new(erf_filename: &str) -> Self {
-        let mut buffer = Self::open_file(erf_filename);
+    pub fn new(erf_filename: &str) -> Result<Self, binrw::Error> {
+        let mut buffer = Self::open_file(erf_filename)?;
 
-        Self::read(&mut buffer).unwrap() // TODO: Make this return result
+        Self::read(&mut buffer)
     }
 
-    fn open_file(filename: &str) -> BufReader<File> {
+    fn open_file(filename: &str) -> Result<File, std::io::Error> {
         let path = PathBuf::from_str(filename).expect("Path not found.");
 
-        let file = OpenOptions::new()
-            .read(true)
-            .open(path)
-            .expect("Could not open file.");
-
-        BufReader::new(file)
+        OpenOptions::new().read(true).open(path)
     }
+
+    fn read_one_zero_key(self, entry_count: u32) {}
 
     pub fn get_resource_id_by_name(self, resource_name: &str) -> Option<String> {
         todo!()

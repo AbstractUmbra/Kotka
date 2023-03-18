@@ -40,13 +40,13 @@ impl LocalizedString {
 }
 
 #[binrw]
-#[brw(little, import(version: Vec<u8>))]
+#[brw(little, import(version: [u8; 4]))]
 #[derive(Debug, Eq, PartialEq)]
 struct ErfKey {
     #[br(temp, calc = *version.last().unwrap())]
     #[bw(ignore)]
     version_char: u8,
-    #[br(seek_before = SeekFrom::Start(if version_char == 0x48 { 24u64 } else { 40u64 }), count=if version_char == 0x48 { 16 } else { 32 })]
+    #[br(seek_before = SeekFrom::Start(if version_char == 48 { 24u64 } else { 40u64 }), count=if version_char == 48 { 16 } else { 32 })]
     resref: Vec<u8>,
 }
 
@@ -54,12 +54,12 @@ struct ErfKey {
 #[brw(little, magic = b"ERF ")]
 #[derive(Debug, Eq, PartialEq)]
 pub struct Erf {
-    #[br(count = 4)]
-    version: Vec<u8>,
+    version: [u8; 4],
     metadata: InnerErfData,
     #[br(seek_before = SeekFrom::Start(metadata.offset_to_localized_string as u64), count=metadata.localized_string_count)]
     localised_strings: Vec<LocalizedString>,
     #[br(seek_before = SeekFrom::Start(metadata.offset_to_key_list as u64), count=metadata.entry_count, args { inner: (version,) })]
+    #[bw(args(*version))]
     keys: Vec<ErfKey>,
 }
 
@@ -75,8 +75,6 @@ impl Erf {
 
         OpenOptions::new().read(true).open(path)
     }
-
-    fn read_one_zero_key(self, entry_count: u32) {}
 
     pub fn get_resource_id_by_name(self, resource_name: &str) -> Option<String> {
         todo!()

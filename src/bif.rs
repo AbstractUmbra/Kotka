@@ -11,10 +11,10 @@ use std::fs::{File, OpenOptions};
 
 use super::shared::{parse_padded_string, RES_TYPES};
 
-#[derive(BinRead, PartialEq, Debug)]
+#[derive(BinRead, Debug, PartialEq, Eq)]
 #[br(little)]
 struct BinaryResourceData {
-    #[br(parse_with = parse_padded_string::<16, _, _>)]
+    #[br(parse_with = parse_padded_string, count=16)]
     reference: String,
     type_id: u16,
     id: u32,
@@ -41,8 +41,7 @@ struct ExtractedResource {
 #[binrw]
 #[brw(little, magic = b"KEY ")]
 struct ChitinHeader {
-    #[br(count = 4)]
-    value: Vec<u8>,
+    value: [u8; 4],
     #[br(seek_before = SeekFrom::Start(8u64))]
     bif_count: u32,
     key_count: u32,
@@ -51,20 +50,20 @@ struct ChitinHeader {
 }
 
 #[derive(Debug)]
-struct BIFResource<'a> {
+pub struct BIFResource<'a> {
     idx: u32,
     _type_id: u16,
     _resource_type: &'a &'a str,
 }
 
 #[derive(Debug)]
-pub struct BIF<'a> {
-    path: PathBuf,
-    bifs: HashMap<String, HashMap<String, BIFResource<'a>>>,
-    _array: HashMap<&'a &'a str, Vec<String>>,
+pub struct Bif<'a> {
+    pub path: PathBuf,
+    pub bifs: HashMap<String, HashMap<String, BIFResource<'a>>>,
+    pub _array: HashMap<&'a &'a str, Vec<String>>,
 }
 
-impl BIF<'_> {
+impl Bif<'_> {
     pub fn new(
         installation_path: &mut PathBuf,
         bif_ix_filter: Option<u32>,
@@ -103,7 +102,7 @@ impl BIF<'_> {
         bif_ix_filter: Option<u32>,
         bif_type_filter: Option<&str>,
         registered_path: &mut PathBuf,
-    ) -> BIF<'a> {
+    ) -> Bif<'a> {
         let mut array: HashMap<&&str, Vec<String>> = HashMap::new();
         let mut bifs: HashMap<String, HashMap<String, BIFResource>> = HashMap::new();
 
@@ -157,7 +156,7 @@ impl BIF<'_> {
                 .or_default()
                 .insert(resource_format, resource);
         }
-        BIF {
+        Bif {
             path: registered_path.to_owned(),
             bifs,
             _array: array,

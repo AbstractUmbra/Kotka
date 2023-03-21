@@ -100,12 +100,17 @@ pub(crate) static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
 };
 
 #[binrw::parser(reader)]
-pub(crate) fn parse_padded_string<const SIZE: usize, T: for<'a> From<&'a str>>(
-) -> binrw::BinResult<T> {
+pub(crate) fn parse_padded_string(
+    args: <Vec<u8> as BinRead>::Args<'_>,
+    ...
+) -> binrw::BinResult<String> {
     let pos = reader.stream_position()?;
-    <[u8; SIZE]>::read(reader).and_then(|bytes| {
-        std::str::from_utf8(&bytes)
-            .map(|s| s.trim_end_matches('\0').into())
+    Vec::<u8>::read_args(reader, args).and_then(|bytes| {
+        String::from_utf8(bytes)
+            .map(|mut s| {
+                s.truncate(s.find('\0').unwrap_or(s.len()));
+                s
+            })
             .map_err(|err| binrw::Error::Custom {
                 pos,
                 err: Box::new(err),

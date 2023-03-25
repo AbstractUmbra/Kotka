@@ -53,7 +53,7 @@ struct ErfResource {
     version_char: u8,
 
     #[br(count=if version_char == 48 { 16 } else { 32 }, try_map = String::from_utf8)]
-    #[bw(map = |s| s.as_bytes().to_vec())]
+    #[bw(map = |s| s.as_bytes()[0.. if version == [0x86, 0x49, 0x46, 0x48] { 16 } else { 32 }].to_vec(), pad_size_to = if version == [0x86, 0x49, 0x46, 0x48] { 16 } else { 32 })]
     reference: String,
 
     id: u32,

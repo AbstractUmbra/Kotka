@@ -1,6 +1,6 @@
 use binrw::{binrw, BinRead, BinReaderExt, BinWriterExt};
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, SeekFrom};
+use std::io::{BufReader, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -42,7 +42,10 @@ impl LocalizedString {
 #[binrw]
 #[brw(little)]
 #[derive(Default, Debug, Eq, PartialEq)]
-struct InnerErfResource {}
+struct InnerErfResource {
+    offset: u32,
+    size: u32,
+}
 
 #[binrw]
 #[brw(little, import(version: [u8; 4], resource_offset: u32))]
@@ -52,16 +55,16 @@ struct ErfResource {
     #[bw(ignore)]
     version_char: u8,
 
-    #[br(count=if version_char == 48 { 16 } else { 32 }, try_map = String::from_utf8)]
-    #[bw(map = |s| s.as_bytes()[0.. if version == [0x86, 0x49, 0x46, 0x48] { 16 } else { 32 }].to_vec(), pad_size_to = if version == [0x86, 0x49, 0x46, 0x48] { 16 } else { 32 })]
+    #[br(count=if version_char == 48 { 16 } else { 32 }, try_map = |x| String::from_utf8(x).map(|s| s.trim_end_matches('\0').to_owned()))]
+    // #[bw(map = |s| s.as_bytes()[0.. if version == [0x86, 0x49, 0x46, 0x48] { 16 } else { 32 }].to_vec(), pad_size_to = if version == [0x86, 0x49, 0x46, 0x48] { 16 } else { 32 })]
+    #[bw(map = |s| s.as_bytes().to_vec(), pad_size_to = if version == [0x86, 0x49, 0x46, 0x48] { 16 } else { 32 })]
     reference: String,
 
     id: u32,
     r#type: u32,
-    #[br(seek_before = SeekFrom::Start(resource_offset as u64), restore_position)]
-    offset: u32,
-    #[br(restore_position)]
-    size: u32,
+    #[br(seek_before = SeekFrom::Start(resource_offset as u64 + ((id as u64 + 1u64) * 8u64)), restore_position)]
+    #[bw(seek_before = SeekFrom::Start(resource_offset as u64 + ((*id as u64 + 1u64) * 8u64)), restore_position)]
+    inner_erf_data: InnerErfResource,
     #[br(ignore)]
     data: Option<InnerErfResource>,
 }
@@ -83,7 +86,7 @@ pub struct Erf<'a> {
     #[br(seek_before = SeekFrom::Start(metadata.offset_to_localized_string as u64), count=metadata.localized_string_count)]
     localised_strings: Vec<LocalizedString>,
     #[br(seek_before = SeekFrom::Start(metadata.offset_to_key_list as u64), count=metadata.entry_count, args { inner: (version, metadata.offset_to_resource_list) })]
-    #[bw(args(*version, metadata.offset_to_resource_list))]
+    #[bw(args(*version, metadata.offset_to_key_list))]
     resources: Vec<ErfResource>,
     // files: Vec<String> // This is actually just filename + file ext
 }
@@ -93,6 +96,7 @@ impl<'a> Erf<'a> {
         let mut buffer = Self::open_file(erf_filename).unwrap();
 
         let mut self_return = Self::read(&mut buffer).unwrap();
+
         self_return.filename = erf_filename;
 
         return self_return;
@@ -149,9 +153,10 @@ impl<'a> Erf<'a> {
     //         output_file.write_le(&resource.data)
     //     } else {
     //         let mut input_file = std::fs::File::open(&self.filename).unwrap();
-    //         let mut buffer: Vec<u8> = vec![0u8; resource.size as usize];
-
-    //         let data = input_file.read_le_args(args)
+    //         input_file
+    //             .seek(SeekFrom::Start(resource.offset as u64))
+    //             .unwrap();
+    //         input_file.write_le(&resource.data)
     //     }
     // }
 }

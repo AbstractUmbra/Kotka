@@ -9,12 +9,12 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-binrw = "0.11.1"
-bstr = "1.4.0"
-eframe = "0.21.3"
+binrw = "0.11.2"
+bstr = "1.5.0"
+eframe = "0.22.0"
 phf = { version = "0.11.1", features = ["macros"] }
-rfd = { version = "0.11.2", features = ["common-controls-v6"] }
-tempfile = "3.4.0"
+rfd = { version = "0.11.4", features = ["common-controls-v6"] }
+tempfile = "3.5.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winreg = "0.11.0"
+winreg = "0.50.0"

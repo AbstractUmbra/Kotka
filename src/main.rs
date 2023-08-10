@@ -1,9 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+mod bif;
+mod erf;
 
+use bif::Bif;
+use erf::Erf;
 use std::{path::PathBuf, str::FromStr};
-
-use kotka::Bif;
-use kotka::Erf;
 // use kotka::Tlk;
 // use rfd::FileDialog;
 

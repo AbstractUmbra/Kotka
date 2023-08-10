@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod bif;
 mod erf;
+mod shared;
 
 use bif::Bif;
 use erf::Erf;

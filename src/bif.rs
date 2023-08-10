@@ -9,18 +9,21 @@ use binrw::{
 };
 use std::fs::{File, OpenOptions};
 
-use super::shared::{parse_padded_string, RES_TYPES};
+use super::shared::RES_TYPES;
 
-#[derive(BinRead, Debug, PartialEq, Eq)]
+#[binrw]
+#[derive(Debug, PartialEq, Eq)]
 #[br(little)]
 struct BinaryResourceData {
-    #[br(parse_with = parse_padded_string, count=16)]
+    #[br(count=16, try_map = |x| String::from_utf8(x).map(|s| s.trim_end_matches('\0').to_owned()))]
+    #[bw(map = |s| s.as_bytes().to_vec(), pad_size_to = 16)]
     reference: String,
     type_id: u16,
     id: u32,
 }
 
-#[derive(BinRead, PartialEq, Debug)]
+#[binrw]
+#[derive(Debug, PartialEq, Eq)]
 #[br(little)]
 struct BIFData {
     size: u32,
@@ -30,8 +33,8 @@ struct BIFData {
     name: NullString,
 }
 
-#[derive(PartialEq, Debug)]
 #[binrw]
+#[derive(Debug, PartialEq, Eq)]
 #[br(little)]
 struct ExtractedResource {
     offset: u32,
@@ -39,27 +42,32 @@ struct ExtractedResource {
 }
 
 #[binrw]
+#[derive(Debug, PartialEq, Eq)]
 #[brw(little, magic = b"KEY ")]
 struct ChitinHeader {
     value: [u8; 4],
-    #[br(seek_before = SeekFrom::Start(8u64))]
+    #[brw(seek_before = SeekFrom::Start(8u64))]
     bif_count: u32,
     key_count: u32,
     offset_filetable: u32,
     offset_keytable: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BIFResource<'a> {
     idx: u32,
     _type_id: u16,
     _resource_type: &'a &'a str,
 }
 
-#[derive(Debug)]
+/// A struct representing the read-in binary data of a Bif file.
+#[derive(Debug, PartialEq, Eq)]
 pub struct Bif<'a> {
+    /// The path to the Bif file.
     pub path: PathBuf,
+    /// Inner map of Bif name to the Bif Resource data.
     pub bifs: HashMap<String, HashMap<String, BIFResource<'a>>>,
+    /// The mapping of Bif names to Resource names.
     pub _array: HashMap<&'a &'a str, Vec<String>>,
 }
 
@@ -101,7 +109,7 @@ impl Bif<'_> {
         headers: ChitinHeader,
         bif_ix_filter: Option<u32>,
         bif_type_filter: Option<&str>,
-        registered_path: &mut PathBuf,
+        installation_path: &mut PathBuf,
     ) -> Bif<'a> {
         let mut array: HashMap<&&str, Vec<String>> = HashMap::new();
         let mut bifs: HashMap<String, HashMap<String, BIFResource>> = HashMap::new();
@@ -157,7 +165,7 @@ impl Bif<'_> {
                 .insert(resource_format, resource);
         }
         Bif {
-            path: registered_path.to_owned(),
+            path: installation_path.to_owned(),
             bifs,
             _array: array,
         }

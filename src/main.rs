@@ -4,15 +4,15 @@ use std::{path::PathBuf, str::FromStr};
 
 use kotka::Bif;
 use kotka::Erf;
-use kotka::Tlk;
-use rfd::FileDialog;
+// use kotka::Tlk;
+// use rfd::FileDialog;
 
 fn main() {
     // let mut installation_path = shared::resolve_windows_registry_key()
     //     .or(FileDialog::new().pick_folder())
     //     .unwrap();
 
-    // let mut installation_path = PathBuf::from_str("example_files/kotor2").unwrap();
+    let mut installation_path = PathBuf::from_str("example_files/kotor2").unwrap();
 
     // let bif = Bif::new(&mut installation_path, None, None).unwrap();
     // println!("{:#?}", bif);

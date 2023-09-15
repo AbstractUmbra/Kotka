@@ -43,7 +43,7 @@ pub struct ErfMetadata {
 #[binrw]
 #[brw(little)]
 #[derive(Default, Debug, Eq, PartialEq)]
-struct ResourceMetadata {
+struct ErfResourceMetadata {
     offset: u32,
     size: u32,
     #[brw(ignore)]
@@ -68,7 +68,7 @@ pub struct ErfResource {
     r#type: u32,
     #[br(seek_before = SeekFrom::Start(resource_offset as u64 + ((id as u64 + 1u64) * 8u64)), restore_position)]
     #[bw(seek_before = SeekFrom::Start(resource_offset as u64 + ((*id as u64 + 1u64) * 8u64)), restore_position)]
-    metadata: ResourceMetadata,
+    metadata: ErfResourceMetadata,
     #[br(ignore)]
     data: Option<Vec<u8>>,
     #[brw(ignore)]

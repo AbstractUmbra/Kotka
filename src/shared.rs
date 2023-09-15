@@ -99,25 +99,6 @@ pub(crate) static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
     0x270Fu16 => "key"
 };
 
-#[binrw::parser(reader)]
-pub(crate) fn parse_padded_string(
-    args: <Vec<u8> as BinRead>::Args<'_>,
-    ...
-) -> binrw::BinResult<String> {
-    let pos = reader.stream_position()?;
-    Vec::<u8>::read_args(reader, args).and_then(|bytes| {
-        String::from_utf8(bytes)
-            .map(|mut s| {
-                s.truncate(s.find('\0').unwrap_or(s.len()));
-                s
-            })
-            .map_err(|err| binrw::Error::Custom {
-                pos,
-                err: Box::new(err),
-            })
-    })
-}
-
 #[cfg(target_os = "windows")]
 pub(crate) fn resolve_windows_registry_key() -> Option<PathBuf> {
     use std::str::FromStr;

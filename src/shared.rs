@@ -1,11 +1,8 @@
-use binrw::BinRead;
 use phf::phf_map;
 use std::path::PathBuf;
 
 #[cfg(target_os = "windows")]
-use winreg::enums::HKEY_LOCAL_MACHINE;
-#[cfg(target_os = "windows")]
-use winreg::RegKey;
+use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
 
 pub(crate) static RES_TYPES: phf::Map<u16, &'static str> = phf_map! {
     0x0000u16 => "res", 	// Misc. GFF resources

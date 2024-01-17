@@ -1,0 +1,3 @@
+[submodule "kse"]
+	path = kse
+	url = git@gitlab.com:kotorsge-team/kse.git

@@ -79,13 +79,11 @@ impl TwoDA {
         let num_of_rows = u32::from_le_bytes(num_of_rows_packed.try_into().unwrap()) as usize;
 
         // Find number of columns
-        let mut tab_cnt = 0;
-        for (i, b) in twoda.iter().enumerate() {
-            if *b == b'\t' && i < the_null_pos {
-                tab_cnt += 1;
-            }
-        }
-        let num_of_cols = tab_cnt;
+        let num_of_cols = twoda
+            .iter()
+            .take(the_null_pos)
+            .filter(|byte| **byte == b'\t')
+            .count();
 
         // Find position after row names
         let mut count = 0;

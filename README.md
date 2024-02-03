@@ -1,5 +1,12 @@
 # Kotka
 
+## Archival
+
+This project has been archived due to both the reverse engineering of the Perl code being too complex for my current level of skill and finding a project that does what I intended to do, but do it better than I imagined I could have.
+Please consider checking out said project [here](https://github.com/StarfishXeno/sotor).
+
+---
+
 A WIP Save Editor for Star Wars Knight of the Old Republic 1 and 2.
 
 This work is based on [KSE](https://deadlystream.com/files/file/503-kotor-savegame-editor/) as their work is [open source](https://gitlab.com/kotorsge-team/kse).
